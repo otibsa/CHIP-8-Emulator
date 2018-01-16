@@ -14,6 +14,7 @@ import random
 import time
 import os
 import threading
+import signal
 
 DEBUG = False
 
@@ -68,6 +69,8 @@ class CPU:
         self.display = Display()
         if program is not None:
             self.load(program)
+        # CTRL-C (SIGINT)
+        signal.signal(signal.SIGINT, self._halt_handler)
 
     def reset(self):
         # stop the timer
@@ -376,6 +379,9 @@ class CPU:
                 if self.sound > 0:
                     self.sound -= 1
 
+    def _halt_handler(self, signum, frame):
+        self.halt = True
+        self.timer_thread.join()
 
 
 
