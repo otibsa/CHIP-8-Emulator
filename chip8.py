@@ -13,6 +13,7 @@ import sys
 import random
 import time
 import os
+import threading
 
 DEBUG = False
 
@@ -61,14 +62,23 @@ class Display:
 
 class CPU:
     def __init__(self, program=None):
+        self.timer_lock = threading.Lock()
+        self.timer_thread = threading.Thread(target=self._timer_task)
         self.reset()
         self.display = Display()
         if program is not None:
             self.load(program)
 
     def reset(self):
-        # programs are copied into RAM and execution starts at address 0x200
+        # stop the timer
+        if self.timer_thread.is_alive():
+            self.halt = True
+            self.timer_thread.join()
+            self.timer_thread = threading.Thread(target=self._timer_task)
+
         self.halt = False
+        self.timer_thread.start()
+        # programs are copied into RAM and execution starts at address 0x200
         self.pc = 0x200  # 16 bit
         self.memory = [0 for _ in range(0xFFF)]  # each cell: 8 bit
         self.V = [0 for x in range(0xF+1)]  # each register: 8 bit
@@ -77,31 +87,8 @@ class CPU:
         self.sound = 0  # 8 bit
         self.stack = [0 for _ in range(16)]  # each cell: 16 bit
         self.sp = 0  # 8 bit
-        self.store_hex_sprites()
+        self._store_hex_sprites()
         random.seed(time.time())
-        # TODO: setup a thread for the two 60Hz timers with thread-safe RW-access
-        # to the two timer registers
-
-    def store_hex_sprites(self):
-        self.hex_sprite_offset = 0
-        h = self.hex_sprite_offset
-        self.memory[(h+0 ):(h+5 )] = [0xF0, 0x90, 0x90, 0x90, 0xF0]  # 0
-        self.memory[(h+5 ):(h+10)] = [0x20, 0x60, 0x20, 0x20, 0x70]  # 1
-        self.memory[(h+10):(h+15)] = [0xF0, 0x10, 0xF0, 0x80, 0xF0]  # 2
-        self.memory[(h+15):(h+20)] = [0xF0, 0x10, 0xF0, 0x10, 0xF0]  # 3
-        self.memory[(h+20):(h+25)] = [0x90, 0x90, 0xF0, 0x10, 0x10]  # 4
-        self.memory[(h+25):(h+30)] = [0xF0, 0x80, 0xF0, 0x10, 0xF0]  # 5
-        self.memory[(h+30):(h+35)] = [0xF0, 0x80, 0xF0, 0x90, 0xF0]  # 6
-        self.memory[(h+35):(h+40)] = [0xF0, 0x10, 0x20, 0x40, 0x40]  # 7
-        self.memory[(h+40):(h+45)] = [0xF0, 0x90, 0xF0, 0x90, 0xF0]  # 8
-        self.memory[(h+45):(h+50)] = [0xF0, 0x90, 0xF0, 0x10, 0xF0]  # 9
-        self.memory[(h+50):(h+55)] = [0xF0, 0x90, 0xF0, 0x90, 0x90]  # A
-        self.memory[(h+55):(h+60)] = [0xE0, 0x90, 0xE0, 0x90, 0xE0]  # B
-        self.memory[(h+60):(h+65)] = [0xF0, 0x80, 0x80, 0x80, 0xF0]  # C
-        self.memory[(h+65):(h+70)] = [0xE0, 0x90, 0x90, 0x90, 0xE0]  # D
-        self.memory[(h+70):(h+75)] = [0xF0, 0x80, 0xF0, 0x80, 0xF0]  # E
-        self.memory[(h+75):(h+80)] = [0xF0, 0x80, 0xF0, 0x80, 0x80]  # F
-
 
     def load(self, program):
         if type(program) in [bytes, list]:
@@ -266,7 +253,8 @@ class CPU:
         elif opcode & 0xF0FF == 0xF007:
             # LD Vx, DT
             p("LD Vx, DT")
-            self.V[x] = self.delay
+            with self.timer_lock:
+                self.V[x] = self.delay
 
         elif opcode & 0xF0FF == 0xF00A:
             # LD Vx, K
@@ -282,12 +270,14 @@ class CPU:
         elif opcode & 0xF0FF == 0xF015:
             # LD DT, Vx
             p("LD DT, Vx")
-            self.delay = self.V[x]
+            with self.timer_lock:
+                self.delay = self.V[x]
 
         elif opcode & 0xF0FF == 0xF018:
             # LD ST, Vx
             p("LD ST, Vx")
-            self.sound = self.V[x]
+            with self.timer_lock:
+                self.sound = self.V[x]
 
         elif opcode & 0xF0FF == 0xF01E:
             # ADD I, Vx
@@ -334,9 +324,57 @@ class CPU:
             # execute
             self._execute(opcode)
 
-            if self.sound > 0:
+            sound = 0
+            with self.timer_lock:
+                sound = self.sound
+
+            if sound > 0
                 # TODO: play sound
                 pass
+
+    def _store_hex_sprites(self):
+        self.hex_sprite_offset = 0
+        h = self.hex_sprite_offset
+        self.memory[(h+0 ):(h+5 )] = [0xF0, 0x90, 0x90, 0x90, 0xF0]  # 0
+        self.memory[(h+5 ):(h+10)] = [0x20, 0x60, 0x20, 0x20, 0x70]  # 1
+        self.memory[(h+10):(h+15)] = [0xF0, 0x10, 0xF0, 0x80, 0xF0]  # 2
+        self.memory[(h+15):(h+20)] = [0xF0, 0x10, 0xF0, 0x10, 0xF0]  # 3
+        self.memory[(h+20):(h+25)] = [0x90, 0x90, 0xF0, 0x10, 0x10]  # 4
+        self.memory[(h+25):(h+30)] = [0xF0, 0x80, 0xF0, 0x10, 0xF0]  # 5
+        self.memory[(h+30):(h+35)] = [0xF0, 0x80, 0xF0, 0x90, 0xF0]  # 6
+        self.memory[(h+35):(h+40)] = [0xF0, 0x10, 0x20, 0x40, 0x40]  # 7
+        self.memory[(h+40):(h+45)] = [0xF0, 0x90, 0xF0, 0x90, 0xF0]  # 8
+        self.memory[(h+45):(h+50)] = [0xF0, 0x90, 0xF0, 0x10, 0xF0]  # 9
+        self.memory[(h+50):(h+55)] = [0xF0, 0x90, 0xF0, 0x90, 0x90]  # A
+        self.memory[(h+55):(h+60)] = [0xE0, 0x90, 0xE0, 0x90, 0xE0]  # B
+        self.memory[(h+60):(h+65)] = [0xF0, 0x80, 0x80, 0x80, 0xF0]  # C
+        self.memory[(h+65):(h+70)] = [0xE0, 0x90, 0x90, 0x90, 0xE0]  # D
+        self.memory[(h+70):(h+75)] = [0xF0, 0x80, 0xF0, 0x80, 0xF0]  # E
+        self.memory[(h+75):(h+80)] = [0xF0, 0x80, 0xF0, 0x80, 0x80]  # F
+
+
+    def _timer_task(self):
+        tick = 0
+        adjust_ticks = 60
+        tick_len = 1.0/60.0
+        next_adjust = time.time() + adjust_ticks * tick_len
+        # no need to lock the halt flag because we only read from it
+        while not self.halt:
+            tick += 1
+            if tick % adjust_ticks == 0:
+                # adjust for clock drift every second
+                time.sleep(next_adjust - time.time())
+                next_adjust += adjust_ticks * tick_len
+            else:
+                time.sleep(tick_len)
+
+            # decrement timer registers
+            with self.timer_lock:
+                if self.delay > 0:
+                    self.delay -= 1
+                if self.sound > 0:
+                    self.sound -= 1
+
 
 
 
