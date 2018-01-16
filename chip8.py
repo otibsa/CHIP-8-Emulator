@@ -328,7 +328,7 @@ class CPU:
             with self.timer_lock:
                 sound = self.sound
 
-            if sound > 0
+            if sound > 0:
                 # TODO: play sound
                 pass
 
@@ -363,7 +363,8 @@ class CPU:
             tick += 1
             if tick % adjust_ticks == 0:
                 # adjust for clock drift every second
-                time.sleep(next_adjust - time.time())
+                if next_adjust - time.time() > 0:
+                    time.sleep(next_adjust - time.time())
                 next_adjust += adjust_ticks * tick_len
             else:
                 time.sleep(tick_len)
@@ -385,7 +386,7 @@ def main():
     else:
         program = sys.stdin.buffer.read()
 
-    cpu = Machine(program)
+    cpu = CPU(program)
     cpu.run()
 
 
