@@ -59,14 +59,7 @@ class Display:
         # self.show()
         return flag
 
-class Registers:
-    def __init__(self):
-        self.V = [0 for x in range(0xF+1)]  # each register: 8 bit
-        self.I = 0  # 16 bit
-        self.delay = 0  # 8 bit
-        self.sound = 0  # 8 bit
-
-class Machine:
+class CPU:
     def __init__(self, program=None):
         self.reset()
         self.display = Display()
@@ -78,7 +71,10 @@ class Machine:
         self.halt = False
         self.pc = 0x200  # 16 bit
         self.memory = [0 for _ in range(0xFFF)]  # each cell: 8 bit
-        self.reg = Registers()
+        self.V = [0 for x in range(0xF+1)]  # each register: 8 bit
+        self.I = 0  # 16 bit
+        self.delay = 0  # 8 bit
+        self.sound = 0  # 8 bit
         self.stack = [0 for _ in range(16)]  # each cell: 16 bit
         self.sp = 0  # 8 bit
         self.store_hex_sprites()
@@ -112,7 +108,7 @@ class Machine:
             self.memory[self.pc:self.pc+len(program)] = program
 
     def _execute(self, opcode):
-        p("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X} ,opcode:{6:04X} ".format(self.pc-2, self.reg.V[0], self.reg.V[0XF], self.reg.I, self.sp, self.stack[0], opcode), end="")
+        p("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X} ,opcode:{6:04X} ".format(self.pc-2, self.V[0], self.V[0XF], self.I, self.sp, self.stack[0], opcode), end="")
         addr = opcode & 0x0FFF
         x = (opcode & 0x0F00) >> 8
         y = (opcode & 0x00F0) >> 4
@@ -145,112 +141,112 @@ class Machine:
         elif opcode & 0xF000 == 0x3000:
             # SE Vx, byte
             p("SE Vx, byte")
-            if self.reg.V[x] == kk:
+            if self.V[x] == kk:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x4000:
             # SNE Vx, byte
             p("SNE Vx, byte")
-            if self.reg.V[x] != kk:
+            if self.V[x] != kk:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x5000:
             # SE Vx, Vy
             p("SE Vx, Vy")
-            if self.reg.V[x] == self.reg.V[y]:
+            if self.V[x] == self.V[y]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x6000:
             # LD Vx, byte
             p("LD Vx, byte")
-            self.reg.V[x] = kk
+            self.V[x] = kk
 
         elif opcode & 0xF000 == 0x7000:
             # ADD Vx, byte
             p("ADD Vx, byte")
-            self.reg.V[x] += kk
-            self.reg.V[x] &= 0xFF
+            self.V[x] += kk
+            self.V[x] &= 0xFF
 
         elif opcode & 0xF00F == 0x8000:
             # LD Vx, Vy
             p("LD Vx, Vy")
-            self.reg.V[x] = self.reg.V[y]
+            self.V[x] = self.V[y]
 
         elif opcode & 0xF00F == 0x8001:
             # OR Vx, Vy
             p("OR Vx, Vy")
-            self.reg.V[x] |= self.reg.V[y]
+            self.V[x] |= self.V[y]
 
         elif opcode & 0xF00F == 0x8002:
             # AND Vx, Vy
             p("AND Vx, Vy")
-            self.reg.V[x] &= self.reg.V[y]
+            self.V[x] &= self.V[y]
 
         elif opcode & 0xF00F == 0x8003:
             # XOR Vx, Vy
             p("XOR Vx, Vy")
-            self.reg.V[x] ^= self.reg.V[y]
+            self.V[x] ^= self.V[y]
 
         elif opcode & 0xF00F == 0x8004:
             # ADD Vx, Vy
             p("ADD Vx, Vy")
-            self.reg.V[x] += self.reg.V[y]
-            self.reg.V[0xF] = 1 if self.reg.V[x] > 0xFF else 0
-            self.reg.V[x] &= 0xFF
+            self.V[x] += self.V[y]
+            self.V[0xF] = 1 if self.V[x] > 0xFF else 0
+            self.V[x] &= 0xFF
 
         elif opcode & 0xF00F == 0x8005:
             # SUB Vx, Vy
             p("SUB Vx, Vy")
-            self.reg.V[0xF] = 1 if self.reg.V[x] > self.reg.V[y] else 0
+            self.V[0xF] = 1 if self.V[x] > self.V[y] else 0
 
-            self.reg.V[x] -= self.reg.V[y]
-            self.reg.V[x] &= 0xFF
+            self.V[x] -= self.V[y]
+            self.V[x] &= 0xFF
 
         elif opcode & 0xF00F == 0x8006:
             # SHR Vx {, Vy}
             p("SHR Vx {, Vy}")
-            self.reg.V[0xF] = self.reg.V[x] & 0x1
-            self.reg.V[x] >>= 1
+            self.V[0xF] = self.V[x] & 0x1
+            self.V[x] >>= 1
 
         elif opcode & 0xF00F == 0x8007:
             # SUBN Vx, Vy
             p("SUBN Vx, Vy")
-            self.reg.V[0xF] = 1 if self.reg.V[y] > self.reg.V[x] else 0
-            self.reg.V[x] = self.reg.V[y] - self.reg.V[x]
+            self.V[0xF] = 1 if self.V[y] > self.V[x] else 0
+            self.V[x] = self.V[y] - self.V[x]
 
         elif opcode & 0xF00F == 0x800E:
             # SHL Vx {, Vy}
             p("SHL Vx {, Vy}")
-            self.reg.V[0xF] = self.reg.V[x] & 0x80
-            self.reg.V[x] <<= 1
+            self.V[0xF] = self.V[x] & 0x80
+            self.V[x] <<= 1
 
         elif opcode & 0xF000 == 0x9000:
             # SNE Vx, Vy
             p("SNE Vx, Vy")
-            if self.reg.V[x] != self.reg.V[y]:
+            if self.V[x] != self.V[y]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0xA000:
             # LD I, addr
             p("LD I, addr")
-            self.reg.I = addr
+            self.I = addr
 
         elif opcode & 0xF000 == 0xB000:
             # JP V0, addr
             p("JP V0, addr")
-            self.pc = addr + self.reg.V[0]
+            self.pc = addr + self.V[0]
 
         elif opcode & 0xF000 == 0xC000:
             # RND Vx, byte
             p("RND Vx, byte")
-            self.reg.V[x] = random.randint(0,0xFF) & kk
+            self.V[x] = random.randint(0,0xFF) & kk
 
         elif opcode & 0xF000 == 0xD000:
             # DRW Vx, Vy, nibble
             p("DRW Vx, Vy, nibble")
             n = opcode & 0x000F
-            sprite = self.memory[self.reg.I:self.reg.I+n]
-            self.display.draw(self.reg.V[x], self.reg.V[y], sprite)
+            sprite = self.memory[self.I:self.I+n]
+            self.display.draw(self.V[x], self.V[y], sprite)
             self.display.show()
 
         elif opcode & 0xF0FF == 0xE09E:
@@ -270,7 +266,7 @@ class Machine:
         elif opcode & 0xF0FF == 0xF007:
             # LD Vx, DT
             p("LD Vx, DT")
-            self.reg.V[x] = self.reg.delay
+            self.V[x] = self.delay
 
         elif opcode & 0xF0FF == 0xF00A:
             # LD Vx, K
@@ -281,47 +277,47 @@ class Machine:
                 if val <= 0xF:
                     break
 
-            self.reg.V[x] = val
+            self.V[x] = val
 
         elif opcode & 0xF0FF == 0xF015:
             # LD DT, Vx
             p("LD DT, Vx")
-            self.reg.delay = self.reg.V[x]
+            self.delay = self.V[x]
 
         elif opcode & 0xF0FF == 0xF018:
             # LD ST, Vx
             p("LD ST, Vx")
-            self.reg.sound = self.reg.V[x]
+            self.sound = self.V[x]
 
         elif opcode & 0xF0FF == 0xF01E:
             # ADD I, Vx
             p("ADD I, Vx")
-            self.reg.I += self.reg.V[x]
-            self.reg.I &= 0xFFFF
+            self.I += self.V[x]
+            self.I &= 0xFFFF
 
         elif opcode & 0xF0FF == 0xF029:
             # LD F, Vx
             p("LD F, Vx")
-            self.reg.I = self.hex_sprite_offset + 5*self.reg.V[x]
+            self.I = self.hex_sprite_offset + 5*self.V[x]
 
         elif opcode & 0xF0FF == 0xF033:
             # LD B, Vx
             p("LD B, Vx")
-            self.memory[self.reg.I] = (self.reg.V[x] % 1000) // 100
-            self.memory[self.reg.I+1] = (self.reg.V[x] % 100) // 10
-            self.memory[self.reg.I+2] = self.reg.V[x] % 10
+            self.memory[self.I] = (self.V[x] % 1000) // 100
+            self.memory[self.I+1] = (self.V[x] % 100) // 10
+            self.memory[self.I+2] = self.V[x] % 10
 
         elif opcode & 0xF0FF == 0xF055:
             # LD [I], Vx
             p("LD [I], Vx")
             for offset in range(x+1):
-                self.memory[self.reg.I+offset] = self.reg.V[offset]
+                self.memory[self.I+offset] = self.V[offset]
 
         elif opcode & 0xF0FF == 0xF065:
             # LD Vx, [I]
             p("LD Vx, [I]")
             for offset in range(x+1):
-                self.reg.V[offset] = self.memory[self.reg.I+offset]
+                self.V[offset] = self.memory[self.I+offset]
 
         else:
             # error! unknown opcode, halt the machine
@@ -338,7 +334,7 @@ class Machine:
             # execute
             self._execute(opcode)
 
-            if self.reg.sound > 0:
+            if self.sound > 0:
                 # TODO: play sound
                 pass
 
