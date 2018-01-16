@@ -19,9 +19,9 @@ import signal
 DEBUG = False
 
 def p(s, end="\n"):
-    if DEBUG:
-        sys.stderr.write(s)
-        sys.stderr.write(end)
+    sys.stderr.write(s)
+    sys.stderr.write(end)
+    sys.stderr.flush()
 
 class Display:
     def __init__(self, width=64, height=32):
@@ -64,8 +64,6 @@ class Display:
 
 class CPU:
     def __init__(self, program=None):
-        self.timer_lock = threading.Lock()
-        self.timer_thread = threading.Thread(target=self._timer_task)
         self.reset()
         self.display = Display()
         if program is not None:
@@ -74,14 +72,7 @@ class CPU:
         signal.signal(signal.SIGINT, self._halt_handler)
 
     def reset(self):
-        # stop the timer
-        if self.timer_thread.is_alive():
-            self.halt = True
-            self.timer_thread.join()
-            self.timer_thread = threading.Thread(target=self._timer_task)
-
         self.halt = False
-        self.timer_thread.start()
         # programs are copied into RAM and execution starts at address 0x200
         self.pc = 0x200  # 16 bit
         self.memory = [0 for _ in range(0xFFF)]  # each cell: 8 bit
@@ -93,14 +84,41 @@ class CPU:
         self.sp = 0  # 8 bit
         self._store_hex_sprites()
         random.seed(time.time())
+        self.clock_speed = 10  # factor of the timer frequency (60 Hz)
+        self.tick = 0
+        self.start_time = time.time()
+        self.next_tick = self.start_time + 1.0/(60.0*self.clock_speed)
 
     def load(self, program):
         if type(program) in [bytes, list]:
             self.memory[self.pc:self.pc+len(program)] = program
 
+    def run(self):
+        while not self.halt:
+
+            t0 = time.time()
+            # fetch
+            opcode = (self.memory[self.pc]<<8) + self.memory[self.pc+1]
+            self.pc += 2
+
+            if DEBUG:
+                p("T+{0:6.2f} ms  {1:4}: {2:20}".format((time.time()-self.start_time)*1000.0, self.tick, opcode2str(opcode)), end=" ")
+
+            # execute
+            self._execute(opcode)
+            t1 = time.time()
+            if DEBUG:
+                p("({:.4f} ms)".format((t1-t0)*1000.0), end="\t")
+
+            if self.sound > 0:
+                # TODO: play sound
+                pass
+
+            self._clock_tick()
+
     def _execute(self, opcode):
-        p("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X}, instruction: {6:04X}   {7}".format(self.pc-2, self.V[0], self.V[0XF], self.I, self.sp, self.stack[0], opcode, opcode2str(opcode)))
         if DEBUG:
+            print("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X}, instruction: {6:04X}   {7}".format(self.pc-2, self.V[0], self.V[0XF], self.I, self.sp, self.stack[0], opcode, opcode2str(opcode)))
             input()
 
         addr = opcode & 0x0FFF
@@ -234,8 +252,7 @@ class CPU:
 
         elif opcode & 0xF0FF == 0xF007:
             # LD Vx, DT
-            with self.timer_lock:
-                self.V[x] = self.delay
+            self.V[x] = self.delay
 
         elif opcode & 0xF0FF == 0xF00A:
             # LD Vx, K
@@ -249,13 +266,11 @@ class CPU:
 
         elif opcode & 0xF0FF == 0xF015:
             # LD DT, Vx
-            with self.timer_lock:
-                self.delay = self.V[x]
+            self.delay = self.V[x]
 
         elif opcode & 0xF0FF == 0xF018:
             # LD ST, Vx
-            with self.timer_lock:
-                self.sound = self.V[x]
+            self.sound = self.V[x]
 
         elif opcode & 0xF0FF == 0xF01E:
             # ADD I, Vx
@@ -287,24 +302,6 @@ class CPU:
             self.halt = True
 
 
-    def run(self):
-        while not self.halt:
-
-            # fetch
-            opcode = (self.memory[self.pc]<<8) + self.memory[self.pc+1]
-            self.pc += 2
-
-            # execute
-            self._execute(opcode)
-
-            sound = 0
-            with self.timer_lock:
-                sound = self.sound
-
-            if sound > 0:
-                # TODO: play sound
-                pass
-
     def _store_hex_sprites(self):
         self.hex_sprite_offset = 0
         h = self.hex_sprite_offset
@@ -324,34 +321,29 @@ class CPU:
         self.memory[(h+65):(h+70)] = [0xE0, 0x90, 0x90, 0x90, 0xE0]  # D
         self.memory[(h+70):(h+75)] = [0xF0, 0x80, 0xF0, 0x80, 0xF0]  # E
         self.memory[(h+75):(h+80)] = [0xF0, 0x80, 0xF0, 0x80, 0x80]  # F
-
-
-    def _timer_task(self):
-        tick = 0
-        adjust_ticks = 60
-        tick_len = 1.0/60.0
-        next_adjust = time.time() + adjust_ticks * tick_len
-        # no need to lock the halt flag because we only read from it
-        while not self.halt:
-            tick += 1
-            if tick % adjust_ticks == 0:
-                # adjust for clock drift every second
-                if next_adjust - time.time() > 0:
-                    time.sleep(next_adjust - time.time())
-                next_adjust += adjust_ticks * tick_len
-            else:
-                time.sleep(tick_len)
-
-            # decrement timer registers
-            with self.timer_lock:
-                if self.delay > 0:
-                    self.delay -= 1
-                if self.sound > 0:
-                    self.sound -= 1
+        
+    def _clock_tick(self):
+        self.tick += 1
+        if self.tick % (60*self.clock_speed) == 0:
+            # decrement timers
+            if self.delay > 0:
+                self.delay -= 1
+            if self.sound > 0:
+                self.sound -= 1
+        now = time.time()
+        if self.next_tick > now:
+            if DEBUG:
+                p("   {:+4f} ms".format(1000.0*(self.next_tick - now)))
+            time.sleep(self.next_tick - now)
+        else:
+            if DEBUG:
+                p(">>> {:+4f} ms <<<".format(1000.0*(self.next_tick - now)))
+            # realign ticks with current time
+            self.next_tick = now
+        self.next_tick += 1.0/(60.0*self.clock_speed)
 
     def _halt_handler(self, signum, frame):
         self.halt = True
-        self.timer_thread.join()
 
 
 def opcode2str(opcode):
