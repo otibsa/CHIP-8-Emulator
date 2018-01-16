@@ -20,7 +20,8 @@ DEBUG = False
 
 def p(s, end="\n"):
     if DEBUG:
-        p(s, end=end)
+        sys.stderr.write(s)
+        sys.stderr.write(end)
 
 class Display:
     def __init__(self, width=64, height=32):
@@ -98,7 +99,10 @@ class CPU:
             self.memory[self.pc:self.pc+len(program)] = program
 
     def _execute(self, opcode):
-        p("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X} ,opcode:{6:04X} ".format(self.pc-2, self.V[0], self.V[0XF], self.I, self.sp, self.stack[0], opcode), end="")
+        p("pc:{0:03X}, V0:{1:02X}, VF:{2:02X}, I:{3:04X}, sp:{4:02X}, stack[0]:{5:03X}, instruction: {6:04X}   {7}".format(self.pc-2, self.V[0], self.V[0XF], self.I, self.sp, self.stack[0], opcode, opcode2str(opcode)))
+        if DEBUG:
+            input()
+
         addr = opcode & 0x0FFF
         x = (opcode & 0x0F00) >> 8
         y = (opcode & 0x00F0) >> 4
@@ -106,87 +110,72 @@ class CPU:
 
         if opcode == 0x00E0:
             # CLS
-            p("CLS")
             self.display.clear()
             self.display.show()
 
         elif opcode == 0x00EE:
             # RET
-            p("RET")
             self.sp -= 1
             self.pc = self.stack[self.sp]
 
         elif opcode & 0xF000 == 0x1000:
             # JP addr
-            p("JP {addr:03X}".format(addr=addr))
             self.pc = addr
 
         elif opcode & 0xF000 == 0x2000:
             # CALL addr
-            p("CALL addr")
             self.stack[self.sp] = self.pc
             self.sp += 1
             self.pc = addr
 
         elif opcode & 0xF000 == 0x3000:
             # SE Vx, byte
-            p("SE Vx, byte")
             if self.V[x] == kk:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x4000:
             # SNE Vx, byte
-            p("SNE Vx, byte")
             if self.V[x] != kk:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x5000:
             # SE Vx, Vy
-            p("SE Vx, Vy")
             if self.V[x] == self.V[y]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0x6000:
             # LD Vx, byte
-            p("LD Vx, byte")
             self.V[x] = kk
 
         elif opcode & 0xF000 == 0x7000:
             # ADD Vx, byte
-            p("ADD Vx, byte")
             self.V[x] += kk
             self.V[x] &= 0xFF
 
         elif opcode & 0xF00F == 0x8000:
             # LD Vx, Vy
-            p("LD Vx, Vy")
             self.V[x] = self.V[y]
 
         elif opcode & 0xF00F == 0x8001:
             # OR Vx, Vy
-            p("OR Vx, Vy")
             self.V[x] |= self.V[y]
 
         elif opcode & 0xF00F == 0x8002:
             # AND Vx, Vy
-            p("AND Vx, Vy")
             self.V[x] &= self.V[y]
 
         elif opcode & 0xF00F == 0x8003:
             # XOR Vx, Vy
-            p("XOR Vx, Vy")
             self.V[x] ^= self.V[y]
 
         elif opcode & 0xF00F == 0x8004:
             # ADD Vx, Vy
-            p("ADD Vx, Vy")
             self.V[x] += self.V[y]
             self.V[0xF] = 1 if self.V[x] > 0xFF else 0
             self.V[x] &= 0xFF
 
         elif opcode & 0xF00F == 0x8005:
             # SUB Vx, Vy
-            p("SUB Vx, Vy")
             self.V[0xF] = 1 if self.V[x] > self.V[y] else 0
 
             self.V[x] -= self.V[y]
@@ -194,46 +183,38 @@ class CPU:
 
         elif opcode & 0xF00F == 0x8006:
             # SHR Vx {, Vy}
-            p("SHR Vx {, Vy}")
             self.V[0xF] = self.V[x] & 0x1
             self.V[x] >>= 1
 
         elif opcode & 0xF00F == 0x8007:
             # SUBN Vx, Vy
-            p("SUBN Vx, Vy")
             self.V[0xF] = 1 if self.V[y] > self.V[x] else 0
             self.V[x] = self.V[y] - self.V[x]
 
         elif opcode & 0xF00F == 0x800E:
             # SHL Vx {, Vy}
-            p("SHL Vx {, Vy}")
             self.V[0xF] = self.V[x] & 0x80
             self.V[x] <<= 1
 
         elif opcode & 0xF000 == 0x9000:
             # SNE Vx, Vy
-            p("SNE Vx, Vy")
             if self.V[x] != self.V[y]:
                 self.pc += 2
 
         elif opcode & 0xF000 == 0xA000:
             # LD I, addr
-            p("LD I, addr")
             self.I = addr
 
         elif opcode & 0xF000 == 0xB000:
             # JP V0, addr
-            p("JP V0, addr")
             self.pc = addr + self.V[0]
 
         elif opcode & 0xF000 == 0xC000:
             # RND Vx, byte
-            p("RND Vx, byte")
             self.V[x] = random.randint(0,0xFF) & kk
 
         elif opcode & 0xF000 == 0xD000:
             # DRW Vx, Vy, nibble
-            p("DRW Vx, Vy, nibble")
             n = opcode & 0x000F
             sprite = self.memory[self.I:self.I+n]
             self.display.draw(self.V[x], self.V[y], sprite)
@@ -241,7 +222,6 @@ class CPU:
 
         elif opcode & 0xF0FF == 0xE09E:
             # SKP Vx
-            p("SKP Vx")
             #TODO: poll the keyboard,
             #      if the key with the value from Vx is currently pressed:
             #          skip the next instruction
@@ -249,19 +229,16 @@ class CPU:
 
         elif opcode & 0xF0FF == 0xE0A1:
             # SKNP Vx
-            p("SKNP Vx")
             #TODO: same but skip if currently not pressed
             pass
 
         elif opcode & 0xF0FF == 0xF007:
             # LD Vx, DT
-            p("LD Vx, DT")
             with self.timer_lock:
                 self.V[x] = self.delay
 
         elif opcode & 0xF0FF == 0xF00A:
             # LD Vx, K
-            p("LD Vx, K")
             val = 0
             while True:
                 val = int(input(), 16)
@@ -272,43 +249,36 @@ class CPU:
 
         elif opcode & 0xF0FF == 0xF015:
             # LD DT, Vx
-            p("LD DT, Vx")
             with self.timer_lock:
                 self.delay = self.V[x]
 
         elif opcode & 0xF0FF == 0xF018:
             # LD ST, Vx
-            p("LD ST, Vx")
             with self.timer_lock:
                 self.sound = self.V[x]
 
         elif opcode & 0xF0FF == 0xF01E:
             # ADD I, Vx
-            p("ADD I, Vx")
             self.I += self.V[x]
             self.I &= 0xFFFF
 
         elif opcode & 0xF0FF == 0xF029:
             # LD F, Vx
-            p("LD F, Vx")
             self.I = self.hex_sprite_offset + 5*self.V[x]
 
         elif opcode & 0xF0FF == 0xF033:
             # LD B, Vx
-            p("LD B, Vx")
             self.memory[self.I] = (self.V[x] % 1000) // 100
             self.memory[self.I+1] = (self.V[x] % 100) // 10
             self.memory[self.I+2] = self.V[x] % 10
 
         elif opcode & 0xF0FF == 0xF055:
             # LD [I], Vx
-            p("LD [I], Vx")
             for offset in range(x+1):
                 self.memory[self.I+offset] = self.V[offset]
 
         elif opcode & 0xF0FF == 0xF065:
             # LD Vx, [I]
-            p("LD Vx, [I]")
             for offset in range(x+1):
                 self.V[offset] = self.memory[self.I+offset]
 
@@ -382,6 +352,86 @@ class CPU:
     def _halt_handler(self, signum, frame):
         self.halt = True
         self.timer_thread.join()
+
+
+def opcode2str(opcode):
+    addr = opcode & 0x0FFF
+    x = (opcode & 0x0F00) >> 8
+    y = (opcode & 0x00F0) >> 4
+    kk = opcode & 0x00FF
+    nibble = opcode & 0x000F
+
+    if opcode == 0x00E0:
+        s="CLS"
+    elif opcode == 0x00EE:
+        s="RET"
+    elif opcode & 0xF000 == 0x1000:
+        s="JP 0x{addr:03X}"
+    elif opcode & 0xF000 == 0x2000:
+        s="CALL 0x{addr:03X}"
+    elif opcode & 0xF000 == 0x3000:
+        s="SE V{x:X}, 0x{byte:02X}"
+    elif opcode & 0xF000 == 0x4000:
+        s="SNE V{x:X}, 0x{byte:02X}"
+    elif opcode & 0xF000 == 0x5000:
+        s="SE V{x:X}, V{y:X}"
+    elif opcode & 0xF000 == 0x6000:
+        s="LD V{x:X}, 0x{byte:02X}"
+    elif opcode & 0xF000 == 0x7000:
+        s="ADD V{x:X}, 0x{byte:02X}"
+    elif opcode & 0xF00F == 0x8000:
+        s="LD V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8001:
+        s="OR V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8002:
+        s="AND V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8003:
+        s="XOR V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8004:
+        s="ADD V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8005:
+        s="SUB V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x8006:
+        s="SHR V{x:X} {{, V{y:X}}}"
+    elif opcode & 0xF00F == 0x8007:
+        s="SUBN V{x:X}, V{y:X}"
+    elif opcode & 0xF00F == 0x800E:
+        s="SHL V{x:X} {{, V{y:X}}}"
+    elif opcode & 0xF000 == 0x9000:
+        s="SNE V{x:X}, V{y:X}"
+    elif opcode & 0xF000 == 0xA000:
+        s="LD I, 0x{addr:03X}"
+    elif opcode & 0xF000 == 0xB000:
+        s="JP V0, 0x{addr:03X}"
+    elif opcode & 0xF000 == 0xC000:
+        s="RND V{x:X}, 0x{byte:02X}"
+    elif opcode & 0xF000 == 0xD000:
+        s="DRW V{x:X}, V{y:X}, 0x{nibble:X}"
+    elif opcode & 0xF0FF == 0xE09E:
+        s="SKP V{x:X}"
+    elif opcode & 0xF0FF == 0xE0A1:
+        s="SKNP V{x:X}"
+    elif opcode & 0xF0FF == 0xF007:
+        s="LD V{x:X}, DT"
+    elif opcode & 0xF0FF == 0xF00A:
+        s="LD V{x:X}, K"
+    elif opcode & 0xF0FF == 0xF015:
+        s="LD DT, V{x:X}"
+    elif opcode & 0xF0FF == 0xF018:
+        s="LD ST, V{x:X}"
+    elif opcode & 0xF0FF == 0xF01E:
+        s="ADD I, V{x:X}"
+    elif opcode & 0xF0FF == 0xF029:
+        s="LD F, V{x:X}"
+    elif opcode & 0xF0FF == 0xF033:
+        s="LD B, V{x:X}"
+    elif opcode & 0xF0FF == 0xF055:
+        s="LD [I], V{x:X}"
+    elif opcode & 0xF0FF == 0xF065:
+        s="LD V{x:X}, [I]"
+    else:
+        s=""
+    return s.format(x=x, y=y, addr=addr, byte=kk, nibble=nibble)
 
 
 
